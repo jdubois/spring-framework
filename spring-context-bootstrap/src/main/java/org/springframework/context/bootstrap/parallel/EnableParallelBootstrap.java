@@ -28,8 +28,9 @@ import org.springframework.context.annotation.Import;
  * Enables opt-in parallel instantiation of non-lazy singleton beans during
  * application context bootstrap.
  *
- * <p>To be used together with {@link org.springframework.context.annotation.Configuration
- * @Configuration} classes as follows:
+ * <p>To be used together with
+ * {@link org.springframework.context.annotation.Configuration @Configuration}
+ * classes as follows:
  *
  * <pre class="code">
  * &#064;Configuration

@@ -17,6 +17,7 @@
 package org.springframework.context.bootstrap.parallel;
 
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
 import java.util.concurrent.Executor;
@@ -169,20 +170,44 @@ public class ParallelBootstrapBeanFactoryPostProcessor
 
 		BeanDependencyGraph graph = BeanDependencyGraph.build(beanFactory, singletons);
 		Set<String> cyclic = graph.beansInCycles();
+		Set<String> factoryProviders = collectFactoryBeanProviders(beanFactory);
 
 		List<String> candidates = new ArrayList<>();
 		for (String beanName : singletons) {
-			if (isSafeCandidate(beanFactory, beanName, cyclic)) {
+			if (isSafeCandidate(beanFactory, beanName, cyclic, factoryProviders)) {
 				candidates.add(beanName);
 			}
 		}
 		return candidates;
 	}
 
-	private boolean isSafeCandidate(ConfigurableListableBeanFactory beanFactory, String beanName, Set<String> cyclic) {
+	/**
+	 * Collect the names of beans that act as the factory bean for at least one other
+	 * bean (for example a {@code @Configuration} class hosting {@code @Bean} methods).
+	 * Such beans must be available synchronously and are therefore treated as
+	 * synchronization points rather than background candidates.
+	 */
+	private static Set<String> collectFactoryBeanProviders(ConfigurableListableBeanFactory beanFactory) {
+		Set<String> providers = new HashSet<>();
+		for (String beanName : beanFactory.getBeanDefinitionNames()) {
+			BeanDefinition bd = safeGetMergedBeanDefinition(beanFactory, beanName);
+			if (bd != null && bd.getFactoryBeanName() != null) {
+				providers.add(bd.getFactoryBeanName());
+			}
+		}
+		return providers;
+	}
+
+	private boolean isSafeCandidate(ConfigurableListableBeanFactory beanFactory, String beanName,
+			Set<String> cyclic, Set<String> factoryProviders) {
+
 		if (cyclic.contains(beanName)) {
 			// Beans in a cycle must be created on a single thread to preserve the
 			// early-singleton-reference handshake.
+			return false;
+		}
+		if (factoryProviders.contains(beanName)) {
+			// A shared factory bean must be created synchronously on the main thread.
 			return false;
 		}
 		BeanDefinition bd = safeGetBeanDefinition(beanFactory, beanName);

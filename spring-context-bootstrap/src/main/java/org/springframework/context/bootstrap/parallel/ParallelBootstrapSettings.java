@@ -119,6 +119,14 @@ public final class ParallelBootstrapSettings {
 		return Math.max(2, Runtime.getRuntime().availableProcessors());
 	}
 
+	/**
+	 * Determine whether the given bean definition has explicitly opted out of
+	 * parallel background initialization via {@link #OPT_OUT_ATTRIBUTE}.
+	 */
+	static boolean isOptedOut(@Nullable BeanDefinition beanDefinition) {
+		return (beanDefinition != null && Boolean.TRUE.equals(beanDefinition.getAttribute(OPT_OUT_ATTRIBUTE)));
+	}
+
 
 	/**
 	 * Builder for {@link ParallelBootstrapSettings}.
@@ -181,15 +189,6 @@ public final class ParallelBootstrapSettings {
 			return new ParallelBootstrapSettings(this.enabled, this.poolSize,
 					this.threadNamePrefix, this.candidateFilter);
 		}
-	}
-
-
-	/**
-	 * Determine whether the given bean definition has explicitly opted out of
-	 * parallel background initialization via {@link #OPT_OUT_ATTRIBUTE}.
-	 */
-	static boolean isOptedOut(@Nullable BeanDefinition beanDefinition) {
-		return (beanDefinition != null && Boolean.TRUE.equals(beanDefinition.getAttribute(OPT_OUT_ATTRIBUTE)));
 	}
 
 }
