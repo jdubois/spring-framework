@@ -1,0 +1,11 @@
+description = "Spring Context Bootstrap"
+
+dependencies {
+	api(project(":spring-beans"))
+	api(project(":spring-context"))
+	api(project(":spring-core"))
+	compileOnly("com.google.code.findbugs:jsr305")
+	testImplementation(testFixtures(project(":spring-beans")))
+	testImplementation(testFixtures(project(":spring-core")))
+	testImplementation("org.awaitility:awaitility")
+}
