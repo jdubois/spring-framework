@@ -23,8 +23,8 @@
 #   2. Downloads the Spring Petclinic sample application.
 #   3. Wires the parallel-bootstrap module into Petclinic and replaces the
 #      normal (sequential) context bootstrap with the parallel mechanism by
-#      registering ParallelBootstrapApplicationContextInitializer through the
-#      Spring Boot 'context.initializer.classes' property.
+#      registering ParallelBootstrapApplicationContextInitializer as an
+#      ApplicationContextInitializer through META-INF/spring.factories.
 #   4. Starts the application and verifies that it boots correctly.
 #
 # Environment variables (all optional):
@@ -138,14 +138,32 @@ print(f"Patched {pom_path}")
 PY
 
 log "Replacing the normal bootstrap mechanism with the parallel initializer"
+# Spring Boot 4 no longer supports the 'context.initializer.classes' property,
+# so we register the initializer as an ApplicationContextInitializer through
+# META-INF/spring.factories, which SpringApplication still loads on startup.
+FACTORIES_FILE="${PETCLINIC_DIR}/src/main/resources/META-INF/spring.factories"
+FACTORIES_KEY="org.springframework.context.ApplicationContextInitializer"
+mkdir -p "$(dirname "${FACTORIES_FILE}")"
+if [[ -f "${FACTORIES_FILE}" ]] && grep -q "${INITIALIZER_CLASS}" "${FACTORIES_FILE}"; then
+	echo "Initializer already registered in ${FACTORIES_FILE}"
+else
+	{
+		echo "# Registered by run-petclinic-parallel-bootstrap.sh: replace the normal"
+		echo "# sequential bootstrap with parallel singleton instantiation."
+		echo "${FACTORIES_KEY}=\\"
+		echo "${INITIALIZER_CLASS}"
+	} >> "${FACTORIES_FILE}"
+fi
+
+# Enable DEBUG logging for the module so we can confirm it was engaged.
 APP_PROPS="${PETCLINIC_DIR}/src/main/resources/application.properties"
-# Remove any previous entry to keep the script idempotent, then append ours.
-sed -i '/^context.initializer.classes=/d' "${APP_PROPS}"
+# Portable in-place edit (avoids the GNU vs BSD 'sed -i' incompatibility).
+TMP_PROPS="$(mktemp)"
+grep -v '^logging.level.org.springframework.context.bootstrap.parallel=' "${APP_PROPS}" > "${TMP_PROPS}" || true
+mv "${TMP_PROPS}" "${APP_PROPS}"
 {
 	echo ""
-	echo "# Enabled by run-petclinic-parallel-bootstrap.sh: replace the normal"
-	echo "# sequential bootstrap with parallel singleton instantiation."
-	echo "context.initializer.classes=${INITIALIZER_CLASS}"
+	echo "# Enabled by run-petclinic-parallel-bootstrap.sh"
 	echo "logging.level.org.springframework.context.bootstrap.parallel=DEBUG"
 } >> "${APP_PROPS}"
 
@@ -198,11 +216,17 @@ if [[ "${STARTED}" != "true" ]]; then
 	exit 1
 fi
 
-# Confirm the parallel bootstrap mechanism was actually engaged.
-if grep -qiE "parallel.bootstrap|ParallelBootstrap" "${APP_LOG}"; then
+# Confirm the parallel bootstrap mechanism was actually engaged. The
+# post-processor logs an unambiguous INFO line when it plans parallel
+# instantiation, or a DEBUG line when no beans are eligible.
+if grep -qE "Parallel bootstrap enabled for|parallel-bootstrap-[0-9]" "${APP_LOG}"; then
 	log "Parallel bootstrap mechanism was active during startup."
+elif grep -qE "No eligible beans for parallel bootstrap|Parallel bootstrap disabled" "${APP_LOG}"; then
+	log "Parallel bootstrap post-processor ran but instantiated beans sequentially (no eligible candidates)."
 else
-	echo "WARNING: application started but no parallel-bootstrap activity was logged." >&2
+	echo "FAILURE: application started but the parallel-bootstrap post-processor never ran." >&2
+	echo "         (The initializer was not picked up by SpringApplication.)" >&2
+	exit 1
 fi
 
 log "SUCCESS: Petclinic started correctly with the parallel bootstrap module."
